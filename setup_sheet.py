@@ -1,10 +1,12 @@
 import io
+import base64
 import json
 import re
 from datetime import datetime
 from typing import Dict, List, Optional
 
 from fpdf import FPDF
+from PIL import Image, ImageOps
 import qrcode
 
 CREATED_BY = "Gary Palfreman"
@@ -26,7 +28,7 @@ SETUP_FIELDS = [
 TOOL_FIELDS = [
     "Tool No + Offset No",
     "Tool Type",
-    "GE REF No",
+    "Company Ref No",
     "Wear Offset X",
     "Wear Offset Z",
     "Change Frequency",
@@ -53,8 +55,30 @@ def build_filename_prefix(inputs: Dict[str, str]) -> str:
     return f"Set_Up_Sheet_{drawing}_{program}"
 
 
-def export_json(inputs: Dict[str, str], tools: List[Dict[str, str]]) -> bytes:
-    data = {"user_inputs": inputs, "tool_inputs": tools}
+def encode_image(data: bytes) -> str:
+    """Validate and resize uploads for reliable, portable PDF/JSON exports."""
+    if len(data) > 10 * 1024 * 1024:
+        raise ValueError("Image exceeds the 10 MB upload limit.")
+    with Image.open(io.BytesIO(data)) as source:
+        image = ImageOps.exif_transpose(source)
+        image.thumbnail((1400, 1400))
+        image = image.convert("RGB")
+        output = io.BytesIO()
+        image.save(output, format="JPEG", quality=82, optimize=True)
+    return base64.b64encode(output.getvalue()).decode("ascii")
+
+
+def image_bytes(encoded: Optional[str]) -> Optional[bytes]:
+    if not encoded:
+        return None
+    return base64.b64decode(encoded, validate=True)
+
+
+def export_json(inputs: Dict[str, str], tools: List[Dict[str, str]],
+                tool_images=None, work_holding_image=None) -> bytes:
+    data = {"user_inputs": inputs, "tool_inputs": tools,
+            "tool_images": (tool_images or [])[:len(tools)],
+            "work_holding_image": work_holding_image}
     return json.dumps(data, indent=4, ensure_ascii=False).encode("utf-8")
 
 
@@ -73,9 +97,20 @@ def load_json_bytes(data: bytes):
         if not isinstance(tool, dict):
             continue
         row = blank_tool()
-        row.update({k: str(v) for k, v in tool.items() if k in row})
+        row.update({("Company Ref No" if k == "GE REF No" else k): str(v)
+                    for k, v in tool.items()
+                    if ("Company Ref No" if k == "GE REF No" else k) in row})
         normalized_tools.append(row)
-    return normalized_inputs, normalized_tools
+    images = parsed.get("tool_images", [])
+    if not isinstance(images, list):
+        images = []
+    images = [(value if isinstance(value, str) else None)
+              for value in images[:len(normalized_tools)]]
+    images.extend([None] * (len(normalized_tools) - len(images)))
+    work_image = parsed.get("work_holding_image")
+    if not isinstance(work_image, str):
+        work_image = None
+    return normalized_inputs, normalized_tools, images, work_image
 
 
 class SetupSheetPDF(FPDF):
@@ -125,6 +160,8 @@ def generate_pdf_bytes(
     inputs: Dict[str, str],
     tool_data: List[Dict[str, str]],
     logo_bytes: Optional[bytes] = None,
+    tool_images=None,
+    work_holding_image=None,
 ) -> bytes:
     pdf = SetupSheetPDF(logo_bytes=logo_bytes)
     pdf.set_auto_page_break(auto=True, margin=25)
@@ -163,8 +200,9 @@ def generate_pdf_bytes(
     pdf.set_font("helvetica", "B", 10)
     pdf.cell(0, 8, "Tool Data", new_x="LMARGIN", new_y="NEXT")
 
-    headers = ["Tool Type", "GE REF No", "Tool No + Offset No", "Wear Offset X", "Wear Offset Z", "Change Frequency"]
+    headers = ["Tool Type", "Company Ref No", "Tool No + Offset No", "Wear Offset X", "Wear Offset Z", "Change Frequency"]
     widths = [38, 25, 39, 27, 27, 34]
+    pdf.set_font("helvetica", "B", 7)
     for header, w in zip(headers, widths):
         pdf.cell(w, 8, header, border=1, align="C")
     pdf.ln()
@@ -180,7 +218,7 @@ def generate_pdf_bytes(
             pdf.set_font("helvetica", size=8)
         values = [
             tool.get("Tool Type", ""),
-            tool.get("GE REF No", ""),
+            tool.get("Company Ref No", ""),
             tool.get("Tool No + Offset No", ""),
             tool.get("Wear Offset X", ""),
             tool.get("Wear Offset Z", ""),
@@ -190,4 +228,41 @@ def generate_pdf_bytes(
             pdf.cell(w, 8, _fit_text(value), border=1, align="C")
         pdf.ln()
 
+    # Dedicated visual reference pages keep the existing tool table legible.
+    images = (tool_images or [])[:len(tool_data)]
+    if any(images) or work_holding_image:
+        pdf.add_page()
+        pdf.set_font("helvetica", "B", 15)
+        pdf.cell(0, 12, "Setup Visual References", new_x="LMARGIN", new_y="NEXT")
+        if work_holding_image:
+            pdf.set_font("helvetica", "B", 10)
+            pdf.cell(0, 8, "Jaws / Fixture / Work Holding", new_x="LMARGIN", new_y="NEXT")
+            _pdf_image_box(pdf, work_holding_image, 10, pdf.get_y(), 190, 68)
+            pdf.set_y(pdf.get_y() + 72)
+        for index, encoded in enumerate(images):
+            if not encoded:
+                continue
+            if pdf.get_y() + 82 > 265:
+                pdf.add_page()
+            tool = tool_data[index]
+            pdf.set_font("helvetica", "B", 10)
+            label = f"Tool {index + 1}: {tool.get('Tool No + Offset No', '')} - {tool.get('Tool Type', '')}"
+            pdf.cell(0, 8, _fit_text(label, 80), new_x="LMARGIN", new_y="NEXT")
+            y = pdf.get_y()
+            _pdf_image_box(pdf, encoded, 10, y, 190, 68)
+            pdf.set_y(y + 73)
+
     return bytes(pdf.output())
+
+
+def _pdf_image_box(pdf, encoded: str, x: float, y: float, width: float, height: float):
+    raw = image_bytes(encoded)
+    if not raw:
+        return
+    with Image.open(io.BytesIO(raw)) as image:
+        iw, ih = image.size
+    ratio = min(width / iw, height / ih)
+    w, h = iw * ratio, ih * ratio
+    stream = io.BytesIO(raw)
+    stream.name = "reference.jpg"
+    pdf.image(stream, x=x + (width - w) / 2, y=y + (height - h) / 2, w=w, h=h)
