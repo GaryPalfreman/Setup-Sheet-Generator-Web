@@ -202,6 +202,7 @@ def generate_pdf_bytes(
 
     headers = ["Tool Type", "Company Ref No", "Tool No + Offset No", "Wear Offset X", "Wear Offset Z", "Change Frequency"]
     widths = [38, 25, 39, 27, 27, 34]
+    pdf.set_font("helvetica", "B", 7)
     for header, w in zip(headers, widths):
         pdf.cell(w, 8, header, border=1, align="C")
     pdf.ln()
