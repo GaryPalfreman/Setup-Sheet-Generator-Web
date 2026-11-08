@@ -6,6 +6,8 @@ from typing import Dict, List, Optional
 
 from fpdf import FPDF
 
+CREATED_BY = "Gary Palfreman"
+
 SETUP_FIELDS = [
     "Work Holding",
     "Jaws/Fixture Name",
@@ -75,10 +77,10 @@ def load_json_bytes(data: bytes):
 
 
 class SetupSheetPDF(FPDF):
-    def __init__(self, logo_bytes: Optional[bytes] = None, created_by: str = "Gary Palfreman"):
+    def __init__(self, logo_bytes: Optional[bytes] = None):
         super().__init__(orientation="P", unit="mm", format="A4")
         self.logo_bytes = logo_bytes
-        self.created_by = created_by
+        self.created_by = CREATED_BY
 
     def _draw_logo(self, x: float, y: float, w: float = 40):
         if not self.logo_bytes:
@@ -108,9 +110,8 @@ def generate_pdf_bytes(
     inputs: Dict[str, str],
     tool_data: List[Dict[str, str]],
     logo_bytes: Optional[bytes] = None,
-    created_by: str = "Gary Palfreman",
 ) -> bytes:
-    pdf = SetupSheetPDF(logo_bytes=logo_bytes, created_by=created_by)
+    pdf = SetupSheetPDF(logo_bytes=logo_bytes)
     pdf.set_auto_page_break(auto=True, margin=25)
     pdf.add_page()
 
