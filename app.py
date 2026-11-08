@@ -38,7 +38,7 @@ with st.sidebar:
     st.header("Setup Sheet")
     mode = st.radio("Start with", ["New setup sheet", "Edit existing JSON"], horizontal=False)
     logo_file = st.file_uploader("Optional company logo", type=["png", "jpg", "jpeg"])
-    created_by = st.text_input("Created by", value="Gary Palfreman")
+    st.caption("Created by: Gary Palfreman (fixed)")
     st.caption("The logo is embedded into the generated PDF. Nothing needs to be stored on your Mac.")
 
 if mode == "Edit existing JSON":
@@ -153,7 +153,7 @@ if required_missing:
     st.warning("Recommended before generating: " + ", ".join(required_missing))
 
 try:
-    pdf_bytes = generate_pdf_bytes(inputs, tools, logo_bytes=logo_bytes, created_by=created_by)
+    pdf_bytes = generate_pdf_bytes(inputs, tools, logo_bytes=logo_bytes)
     json_bytes = export_json(inputs, tools)
 except Exception as exc:
     st.error(f"Could not generate the setup sheet: {exc}")
