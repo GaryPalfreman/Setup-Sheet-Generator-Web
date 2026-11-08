@@ -7,6 +7,8 @@ from setup_sheet import (
     blank_tool,
     build_filename_prefix,
     export_json,
+    encode_image,
+    image_bytes,
     generate_pdf_bytes,
     load_json_bytes,
 )
@@ -33,6 +35,10 @@ if "tools" not in st.session_state:
     st.session_state.tools = []
 if "edit_index" not in st.session_state:
     st.session_state.edit_index = None
+if "tool_images" not in st.session_state:
+    st.session_state.tool_images = []
+if "work_holding_image" not in st.session_state:
+    st.session_state.work_holding_image = None
 
 with st.sidebar:
     st.header("Setup Sheet")
@@ -45,9 +51,11 @@ if mode == "Edit existing JSON":
     json_file = st.file_uploader("Upload an existing setup-sheet JSON", type=["json"], key="json_loader")
     if json_file and st.button("Load setup sheet", type="primary"):
         try:
-            inputs, tools = load_json_bytes(json_file.getvalue())
+            inputs, tools, images, work_image = load_json_bytes(json_file.getvalue())
             st.session_state.setup_inputs = inputs
             st.session_state.tools = tools
+            st.session_state.tool_images = images
+            st.session_state.work_holding_image = work_image
             st.session_state.edit_index = None
             st.success("Setup sheet loaded.")
             st.rerun()
@@ -92,6 +100,7 @@ if button_cols[1].button("Edit tool", use_container_width=True, disabled=not st.
     st.session_state.edit_index = 0 if st.session_state.tools else None
 if button_cols[2].button("Clear all tools", use_container_width=True, disabled=not st.session_state.tools):
     st.session_state.tools = []
+    st.session_state.tool_images = []
     st.session_state.edit_index = None
     st.rerun()
 
@@ -123,12 +132,14 @@ if st.session_state.edit_index is not None:
     if save_tool:
         if editing_new:
             st.session_state.tools.append(tool_values)
+            st.session_state.tool_images.append(None)
         else:
             st.session_state.tools[st.session_state.edit_index] = tool_values
         st.session_state.edit_index = None
         st.rerun()
     if delete_tool and not editing_new:
         st.session_state.tools.pop(st.session_state.edit_index)
+        st.session_state.tool_images.pop(st.session_state.edit_index)
         st.session_state.edit_index = None
         st.rerun()
     if cancel_tool:
@@ -136,7 +147,45 @@ if st.session_state.edit_index is not None:
         st.rerun()
 
 st.divider()
-st.subheader("3. Generate files")
+st.subheader("3. Tool Images")
+st.caption("Upload up to one image per saved tool. Each image is linked to its tool row and included in the PDF and editable JSON.")
+
+# A dedicated uploader per tool enforces the exact maximum of one image per saved tool.
+for index, tool in enumerate(st.session_state.tools):
+    title = f"Tool {index + 1} — {tool.get('Tool No + Offset No') or tool.get('Tool Type') or 'Unnamed tool'}"
+    with st.expander(title, expanded=False):
+        uploaded = st.file_uploader("Tool image (JPG or PNG)", type=["jpg", "jpeg", "png"],
+                                    key=f"tool_image_{index}")
+        if uploaded is not None:
+            try:
+                st.session_state.tool_images[index] = encode_image(uploaded.getvalue())
+            except Exception as exc:
+                st.error(f"Could not process image: {exc}")
+        if st.session_state.tool_images[index]:
+            st.image(image_bytes(st.session_state.tool_images[index]), width=250)
+            if st.button("Remove image", key=f"remove_tool_image_{index}"):
+                st.session_state.tool_images[index] = None
+                st.rerun()
+if not st.session_state.tools:
+    st.info("Save a tool in Tool data to enable its image upload.")
+
+st.subheader("4. Work Holding Image")
+st.caption("One image for the jaws, fixture, or work holding arrangement.")
+holding_upload = st.file_uploader("Work holding image (JPG or PNG)", type=["jpg", "jpeg", "png"],
+                                  key="work_holding_upload")
+if holding_upload is not None:
+    try:
+        st.session_state.work_holding_image = encode_image(holding_upload.getvalue())
+    except Exception as exc:
+        st.error(f"Could not process work holding image: {exc}")
+if st.session_state.work_holding_image:
+    st.image(image_bytes(st.session_state.work_holding_image), width=300)
+    if st.button("Remove work holding image"):
+        st.session_state.work_holding_image = None
+        st.rerun()
+
+st.divider()
+st.subheader("5. Generate files")
 
 inputs = st.session_state.setup_inputs
 tools = st.session_state.tools
@@ -153,8 +202,11 @@ if required_missing:
     st.warning("Recommended before generating: " + ", ".join(required_missing))
 
 try:
-    pdf_bytes = generate_pdf_bytes(inputs, tools, logo_bytes=logo_bytes)
-    json_bytes = export_json(inputs, tools)
+    pdf_bytes = generate_pdf_bytes(inputs, tools, logo_bytes=logo_bytes,
+                                   tool_images=st.session_state.tool_images,
+                                   work_holding_image=st.session_state.work_holding_image)
+    json_bytes = export_json(inputs, tools, st.session_state.tool_images,
+                             st.session_state.work_holding_image)
 except Exception as exc:
     st.error(f"Could not generate the setup sheet: {exc}")
     st.stop()
@@ -184,6 +236,8 @@ with st.expander("Setup sheet data preview"):
 if st.button("Start a new setup sheet"):
     st.session_state.setup_inputs = blank_setup()
     st.session_state.tools = []
+    st.session_state.tool_images = []
+    st.session_state.work_holding_image = None
     st.session_state.edit_index = None
     st.rerun()
 
