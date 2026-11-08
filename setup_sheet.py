@@ -5,8 +5,10 @@ from datetime import datetime
 from typing import Dict, List, Optional
 
 from fpdf import FPDF
+import qrcode
 
 CREATED_BY = "Gary Palfreman"
+BUSINESS_CARD_URL = "https://garypalfreman.github.io/Digital-Business-Card/"
 
 SETUP_FIELDS = [
     "Work Holding",
@@ -92,11 +94,24 @@ class SetupSheetPDF(FPDF):
         except Exception:
             pass
 
+    def _draw_business_card_qr(self):
+        qr = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=8, border=2)
+        qr.add_data(BUSINESS_CARD_URL)
+        qr.make(fit=True)
+        image = qr.make_image(fill_color="black", back_color="white")
+        stream = io.BytesIO()
+        image.save(stream, format="PNG")
+        stream.seek(0)
+        stream.name = "business_card_qr.png"
+        self.image(stream, x=147, y=274, w=16, h=16)
+
     def footer(self):
         self.set_y(-20)
         self.set_font("helvetica", size=8)
         current_date = datetime.now().strftime("%Y-%m-%d")
-        self.cell(0, 8, f"Created by {self.created_by} on {current_date}", align="C")
+        self.set_x(43)
+        self.cell(102, 8, f"Created by {self.created_by} on {current_date}", align="C")
+        self._draw_business_card_qr()
         self._draw_logo(10, 270, 32)
         self._draw_logo(168, 270, 32)
 
