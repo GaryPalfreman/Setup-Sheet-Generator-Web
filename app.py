@@ -39,6 +39,8 @@ if "tool_images" not in st.session_state:
     st.session_state.tool_images = []
 if "work_holding_image" not in st.session_state:
     st.session_state.work_holding_image = None
+if "image_upload_generation" not in st.session_state:
+    st.session_state.image_upload_generation = 0
 
 with st.sidebar:
     st.header("Setup Sheet")
@@ -56,6 +58,7 @@ if mode == "Edit existing JSON":
             st.session_state.tools = tools
             st.session_state.tool_images = images
             st.session_state.work_holding_image = work_image
+            st.session_state.image_upload_generation += 1
             st.session_state.edit_index = None
             st.success("Setup sheet loaded.")
             st.rerun()
@@ -101,6 +104,7 @@ if button_cols[1].button("Edit tool", use_container_width=True, disabled=not st.
 if button_cols[2].button("Clear all tools", use_container_width=True, disabled=not st.session_state.tools):
     st.session_state.tools = []
     st.session_state.tool_images = []
+    st.session_state.image_upload_generation += 1
     st.session_state.edit_index = None
     st.rerun()
 
@@ -140,6 +144,7 @@ if st.session_state.edit_index is not None:
     if delete_tool and not editing_new:
         st.session_state.tools.pop(st.session_state.edit_index)
         st.session_state.tool_images.pop(st.session_state.edit_index)
+        st.session_state.image_upload_generation += 1
         st.session_state.edit_index = None
         st.rerun()
     if cancel_tool:
@@ -155,7 +160,7 @@ for index, tool in enumerate(st.session_state.tools):
     title = f"Tool {index + 1} — {tool.get('Tool No + Offset No') or tool.get('Tool Type') or 'Unnamed tool'}"
     with st.expander(title, expanded=False):
         uploaded = st.file_uploader("Tool image (JPG or PNG)", type=["jpg", "jpeg", "png"],
-                                    key=f"tool_image_{index}")
+                                    key=f"tool_image_{st.session_state.image_upload_generation}_{index}")
         if uploaded is not None:
             try:
                 st.session_state.tool_images[index] = encode_image(uploaded.getvalue())
@@ -165,6 +170,7 @@ for index, tool in enumerate(st.session_state.tools):
             st.image(image_bytes(st.session_state.tool_images[index]), width=250)
             if st.button("Remove image", key=f"remove_tool_image_{index}"):
                 st.session_state.tool_images[index] = None
+                st.session_state.image_upload_generation += 1
                 st.rerun()
 if not st.session_state.tools:
     st.info("Save a tool in Tool data to enable its image upload.")
@@ -172,7 +178,7 @@ if not st.session_state.tools:
 st.subheader("4. Work Holding Image")
 st.caption("One image for the jaws, fixture, or work holding arrangement.")
 holding_upload = st.file_uploader("Work holding image (JPG or PNG)", type=["jpg", "jpeg", "png"],
-                                  key="work_holding_upload")
+                                  key=f"work_holding_upload_{st.session_state.image_upload_generation}")
 if holding_upload is not None:
     try:
         st.session_state.work_holding_image = encode_image(holding_upload.getvalue())
@@ -182,6 +188,7 @@ if st.session_state.work_holding_image:
     st.image(image_bytes(st.session_state.work_holding_image), width=300)
     if st.button("Remove work holding image"):
         st.session_state.work_holding_image = None
+        st.session_state.image_upload_generation += 1
         st.rerun()
 
 st.divider()
@@ -238,6 +245,7 @@ if st.button("Start a new setup sheet"):
     st.session_state.tools = []
     st.session_state.tool_images = []
     st.session_state.work_holding_image = None
+    st.session_state.image_upload_generation += 1
     st.session_state.edit_index = None
     st.rerun()
 
