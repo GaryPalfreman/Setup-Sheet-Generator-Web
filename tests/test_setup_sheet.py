@@ -49,7 +49,7 @@ class SetupSheetTests(unittest.TestCase):
         self.assertEqual(images[0], self.image)
         self.assertIsNone(images[1])
         self.assertEqual(holding, self.image)
-        self.assertTrue(image_bytes(images[0]).startswith(b"\\xff\\xd8"))
+        self.assertTrue(image_bytes(images[0]).startswith(bytes([0xFF, 0xD8])))
 
     def test_pdf_with_all_images(self):
         pdf = generate_pdf_bytes(self.inputs, self.tools, tool_images=[self.image, self.image], work_holding_image=self.image)
